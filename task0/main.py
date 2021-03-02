@@ -4,23 +4,25 @@ from sklearn.metrics import mean_squared_error
 fileTrain = "train.csv"
 fileTest = "test.csv"
 
-# Train step
+# Step 1: Train
 dataFrame = pd.read_csv(fileTrain)
+Idx = dataFrame.Id
 y = dataFrame.y
 xi = dataFrame.iloc[:, 2:12]
 y_pred = xi.mean(axis = 1)
 
-# Evaluation metric
+# Step 2: Evaluation
 RMSE = mean_squared_error(y, y_pred)**0.5
 print(RMSE)
 
-# Test step
+# Step 3: Test
 dataFrame = pd.read_csv(fileTest)
 Idx = dataFrame.Id
 xi = dataFrame.iloc[:, 1:11]
 y_pred = xi.mean(axis = 1)
+# print(y_pred)
 
-# save output
+# Step 4: Save output
 output = pd.DataFrame({'Id': Idx, 'y': y_pred})
-output.to_csv('output.csv', index=False)
+output.to_csv('output.csv', index = False)
 
