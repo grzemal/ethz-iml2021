@@ -8,7 +8,7 @@ fileTest = "test.csv"
 dataFrame = pd.read_csv(fileTrain)
 Idx = dataFrame.Id
 y = dataFrame.y
-xi = dataFrame.iloc[:, 2:12]
+xi = dataFrame.iloc[:, 2:]
 y_pred = xi.mean(axis = 1)
 
 # Step 2: Evaluation
@@ -18,9 +18,8 @@ print(RMSE)
 # Step 3: Test
 dataFrame = pd.read_csv(fileTest)
 Idx = dataFrame.Id
-xi = dataFrame.iloc[:, 1:11]
+xi = dataFrame.iloc[:, 1:]
 y_pred = xi.mean(axis = 1)
-# print(y_pred)
 
 # Step 4: Save output
 output = pd.DataFrame({'Id': Idx, 'y': y_pred})
