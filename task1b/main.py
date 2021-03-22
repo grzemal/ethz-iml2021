@@ -1,9 +1,10 @@
 import pandas as pd
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import KFold
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Ridge
 import numpy as np
+
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import SGDRegressor
+from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import Ridge
 
 fileTrain = "train.csv"
 
@@ -25,9 +26,29 @@ def feature_description(x):
 
 feature_matrix = np.array([feature_description(xi[i]) for i in range(len(xi))])
 
-#linear regression
-clf = LinearRegression(fit_intercept=False,n_jobs=-1)
-reg = clf.fit(feature_matrix, y)
+#Linear regression
+reg = LinearRegression(fit_intercept=False)
+reg.fit(feature_matrix, y)
+#print(reg.score(feature_matrix, y))
+#print(reg.coef_)
+
+#SDG regression
+reg = SGDRegressor(loss='huber', fit_intercept=False, random_state=42)
+reg.fit(feature_matrix, y)
+#print(reg.score(feature_matrix, y))
+#print(reg.coef_)
+
+#Ridge regression with built-in cross-validation.
+#reg = RidgeCV(fit_intercept=False)
+#reg.fit(feature_matrix, y)
+#print(reg.score(feature_matrix, y))
+#print(reg.coef_)
+
+#Ridge regression
+#reg = Ridge(alpha=0.01, fit_intercept=False)
+#reg.fit(feature_matrix, y)
+#print(reg.score(feature_matrix, y))
+#print(reg.coef_)
 
 #save output
-np.savetxt("output_new.csv",reg.coef_,delimiter=",")
+np.savetxt("output.csv",reg.coef_,delimiter=",")
