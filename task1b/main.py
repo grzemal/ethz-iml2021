@@ -4,14 +4,15 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import SGDRegressor
 from sklearn.linear_model import RidgeCV
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import LassoCV
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
 
 fileTrain = "train.csv"
 
 #config
-functions = 21
+lambdas = np.linspace(0.01, 1000.0, num=10000)
 
-#read data
 dataFrame = pd.read_csv(fileTrain)
 y = dataFrame.y.to_numpy()
 xi = dataFrame.iloc[:, 2:].to_numpy()
@@ -26,11 +27,14 @@ def feature_description(x):
 
 feature_matrix = np.array([feature_description(xi[i]) for i in range(len(xi))])
 
+x_train, x_test, y_train, y_test = train_test_split(feature_matrix, y, test_size=0.15)
+
 #Linear regression
 reg = LinearRegression(fit_intercept=False)
 reg.fit(feature_matrix, y)
 #print(reg.score(feature_matrix, y))
 #print(reg.coef_)
+
 
 #SDG regression
 reg = SGDRegressor(loss='huber', fit_intercept=False, random_state=42)
@@ -38,17 +42,33 @@ reg.fit(feature_matrix, y)
 #print(reg.score(feature_matrix, y))
 #print(reg.coef_)
 
-#Ridge regression with built-in cross-validation.
-#reg = RidgeCV(fit_intercept=False)
-#reg.fit(feature_matrix, y)
+prediction = reg.predict(feature_matrix)
+RMSE = mean_squared_error(y, prediction) ** 0.5
+print(RMSE)
+
+#SDG regression
+reg = SGDRegressor(loss='huber', fit_intercept=False, random_state=42, learning_rate='adaptive')
+reg.fit(feature_matrix, y)
 #print(reg.score(feature_matrix, y))
 #print(reg.coef_)
 
-#Ridge regression
-#reg = Ridge(alpha=0.01, fit_intercept=False)
+#Ridge regression with built-in cross-validation.
+#reg = RidgeCV(alphas = lambdas, fit_intercept=False)
 #reg.fit(feature_matrix, y)
 #print(reg.score(feature_matrix, y))
-#print(reg.coef_)
+#print(reg.alpha_)
+
+#Lasso regression with built-in cross-validation.
+#reg = LassoCV(n_alphas = 1000, alphas = None, fit_intercept=False, max_iter=10000)
+#reg.fit(feature_matrix, y)
+#print(reg.score(feature_matrix, y))
+#print(reg.alpha_)
+
+#RMSE
+prediction = reg.predict(feature_matrix)
+RMSE = mean_squared_error(y, prediction) ** 0.5
+print(RMSE)
+
 
 #save output
 np.savetxt("output.csv",reg.coef_,delimiter=",")

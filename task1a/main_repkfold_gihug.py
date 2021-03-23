@@ -39,7 +39,7 @@ for idx_train, idx_test in rkf.split(xi):
 
     for i in range(len(regularization_params)):
         # ridge regression
-        clf = Ridge(regularization_params[i], tol=1e-12)
+        clf = Ridge(regularization_params[i], fit_intercept=False)
         clf.fit(x_train, y_train)
         prediction = clf.predict(x_test)
         prediction_error = mean_squared_error(y_test, prediction) ** 0.5
@@ -49,11 +49,19 @@ for idx_train, idx_test in rkf.split(xi):
     if counter % folds == 0:
         counter = 0
         #print(current_RMSE)
-        print(RMSE)
+
+        sum_curr = 0
+        sum_old = 0
         for i in range(len(regularization_params)):
-            if current_RMSE[i] < RMSE[i] or RMSE[i] == 0:
-                RMSE[i] = current_RMSE[i]
-            current_RMSE[i] = 0
+            sum_curr += current_RMSE[i]
+            sum_old += RMSE[i]
+        if sum_curr < sum_old or sum_old == 0:
+            RMSE = current_RMSE
+        current_RMSE = [0 for i in range(len(regularization_params))]
+        print(sum_old)
+
+
+
 
 
 #output
