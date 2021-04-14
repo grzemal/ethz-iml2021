@@ -1,78 +1,124 @@
 import pandas as pd
 import numpy as np
-from scipy.stats import iqr
-
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-
-from sklearn.metrics import roc_auc_score
+import time
 
 # load the training data
-train_features = pd.read_csv('train_features.csv').sort_values(by=['pid', 'Time'])
-train_labels = pd.read_csv('train_labels.csv').sort_values(by=['pid'])
+train_features = pd.read_csv('train_features.csv').\
+    sort_values(by=['pid', 'Time'])
+train_labels = pd.read_csv('train_labels.csv').\
+    sort_values(by=['pid'])
 
 # load the test data
 test_features = pd.read_csv('test_features.csv')
 
-x_ = train_features.iloc[:, 2:]
-
-
-# handle missing data
-
 # balance imbalanced data
 
+def make_features(raw_data):
+    n_meas = raw_data.groupby('pid', sort=False).count()
 
-def create_features(raw_data):
-    number_of_features_per_channel = 5
-    tot_mean = raw_data.mean(axis=0)
-    new_features = np.zeros((int(raw_data.shape[0] / 12), raw_data.shape[1] * number_of_features_per_channel))
-    for i in range(int(raw_data.shape[0] / 12)):
-        patient_features = raw_data.iloc[12 * i: 12 * (i + 1), :]
-        patient_features_ffill = patient_features.ffill(axis=0)
+    # handle missing data
+    raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).ffill())
+    raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).bfill())
+    raw_data = raw_data.fillna(raw_data.median())
 
-        last = len(patient_features_ffill.values) - 1
-        # patient_features_ffill.iloc[last, :] = patient_features_ffill.iloc[last,fillna(tot_mean)
-        patient_features_ffill = patient_features_ffill.fillna(tot_mean)
+    last_meas = raw_data.groupby('pid', sort=False).last()
+    median = raw_data.groupby('pid', sort=False).median()
+    
+    interquartile_range = raw_data.groupby('pid', sort=False).\
+        quantile([.25, .75]).groupby('pid', sort=False).\
+        diff().groupby('pid', sort=False).first(1)
 
-        n_meas = 12 - patient_features.isna().sum().to_numpy()
-        last_meas = patient_features_ffill.iloc[last, :].to_numpy()
-        median = patient_features_ffill.median(axis=0).to_numpy()
-        interquartile_range = iqr(patient_features_ffill.to_numpy(), axis=0)
-        max_meas = patient_features_ffill.max(axis=0).to_numpy()
+    frames = [n_meas.iloc[:, 1:], last_meas.iloc[:, 1:],
+              median.iloc[:, 1:], interquartile_range.iloc[:, 1:]]
+    features = pd.concat(frames, axis=1, join="inner")
+    return features
 
-        new_single_features = np.concatenate((n_meas, last_meas, median, interquartile_range, max_meas))
-        new_features[i, :] = new_single_features
+start = time.time()
+X = make_features(train_features)
+X_test = make_features(test_features)
+end = time.time()
+print(end - start)
 
-    return new_features
+y = train_labels
 
+##########################################################################
+#############################  Sub-task 1  ###############################
+##########################################################################
+labels_sub_task1 = ["LABEL_BaseExcess", "LABEL_Fibrinogen", "LABEL_AST",
+                    "LABEL_Alkalinephos", "LABEL_Bilirubin_total",
+                    "LABEL_Lactate", "LABEL_TroponinI", "LABEL_SaO2",
+                    "LABEL_Bilirubin_direct", "LABEL_EtCO2"]
 
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+prediction_sub_task1 = np.zeros((X_test.to_numpy().shape[0],
+                                 len(labels_sub_task1)))
 
-X = create_features(x_)
-y = train_labels.iloc[:, 2:].to_numpy()
+from sklearn.experimental import enable_hist_gradient_boosting
+from sklearn.ensemble import HistGradientBoostingClassifier
 
-from sklearn.svm import SVC
+start = time.time()
+clf = HistGradientBoostingClassifier(random_state=42)
+for i in range(len(labels_sub_task1)):
+    clf.fit(X.to_numpy(), y[[labels_sub_task1[i]]].to_numpy().flatten())
+    prediction_sub_task1[:, i] = clf.predict_proba(X_test.to_numpy())[:, 1]
+end = time.time()
+print(end - start)
 
-test_ = test_features.iloc[:, 2:]
-test_features_ = create_features(test_)
-predictions = np.zeros(test_.shape[0], )
+##########################################################################
+#############################  Sub-task 2  ###############################
+##########################################################################
+labels_sub_task2 = ["LABEL_Sepsis"]
+prediction_sub_task2 = np.zeros((X_test.to_numpy().shape[0],
+                                 len(labels_sub_task2)))
 
-# classification subtask 1
-clf = make_pipeline(StandardScaler(), SVC(probability=True, gamma="scale", class_weight="balanced"))
+start = time.time()
+clf = HistGradientBoostingClassifier(random_state=42)
+for i in range(len(labels_sub_task2)):
+    clf.fit(X.to_numpy(), y[[labels_sub_task2[i]]].to_numpy().flatten())
+    prediction_sub_task2[:, i] = clf.predict_proba(X_test.to_numpy())[:, 1]
+end = time.time()
+print(end - start)
 
-# for loop for all tests
-for i in range(10):
-    y_current = y[:, i]
-    clf.fit(X, y_current)
-    prediction = clf.predict_proba(test_features_)[:, 1]
-    # predictions[:, i] =  prediction
+##########################################################################
+#############################  Sub-task 3  ###############################
+##########################################################################
+from sklearn.ensemble import HistGradientBoostingRegressor
 
-# classification subtask 2
+labels_sub_task3 = ["LABEL_RRate", "LABEL_ABPm", "LABEL_SpO2",
+                    "LABEL_Heartrate"]
 
-clf_2 = make_pipeline(StandardScaler(), SVC(probability=True, gamma="scale", class_weight="balanced"))
-y_sepsis = y[:][11]
-clf_2.fit(X, y_sepsis)
-prediction = clf_2.predict_proba(test_features_)[:, 1]
+prediction_sub_task3 = np.zeros((X_test.to_numpy().shape[0],
+                                 len(labels_sub_task3)))
+start = time.time()
+est = HistGradientBoostingRegressor(random_state=42)
+for i in range(len(labels_sub_task3)):
+    est.fit(X.to_numpy(), y[[labels_sub_task3[i]]].to_numpy().flatten())
+    prediction_sub_task3[:, i] = est.predict(X_test.to_numpy())
+end = time.time()
+print(end - start)
 
-print(prediction)
+##########################################################################
+#############################  Submission  ###############################
+##########################################################################
+d = {'pid': X_test.index.values,
+     labels_sub_task1[0]: prediction_sub_task1[:, 0],
+     labels_sub_task1[1]: prediction_sub_task1[:, 1],
+     labels_sub_task1[2]: prediction_sub_task1[:, 2],
+     labels_sub_task1[3]: prediction_sub_task1[:, 3],
+     labels_sub_task1[4]: prediction_sub_task1[:, 4],
+     labels_sub_task1[5]: prediction_sub_task1[:, 5],
+     labels_sub_task1[6]: prediction_sub_task1[:, 6],
+     labels_sub_task1[7]: prediction_sub_task1[:, 7],
+     labels_sub_task1[8]: prediction_sub_task1[:, 8],
+     labels_sub_task1[9]: prediction_sub_task1[:, 9],
+
+     labels_sub_task2[0]: prediction_sub_task2[:, 0],
+
+     labels_sub_task3[0]: prediction_sub_task3[:, 0],
+     labels_sub_task3[1]: prediction_sub_task3[:, 1],
+     labels_sub_task3[2]: prediction_sub_task3[:, 2],
+     labels_sub_task3[3]: prediction_sub_task3[:, 3]
+     }
+df = pd.DataFrame(data=d)
+
+df.to_csv('prediction.zip', index=False, float_format='%.3f', compression='zip')
+df.to_csv('prediction.csv', index=False, float_format='%.3f')
