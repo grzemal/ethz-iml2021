@@ -19,7 +19,7 @@ def make_features(raw_data):
     # handle missing data
     raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).ffill())
     raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).bfill())
-    raw_data = raw_data.fillna(raw_data.median())
+    raw_data = raw_data.fillna(raw_data.mean())
 
     last_meas = raw_data.groupby('pid', sort=False).last()
     median = raw_data.groupby('pid', sort=False).median()
