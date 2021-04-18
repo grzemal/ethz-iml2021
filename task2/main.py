@@ -21,7 +21,7 @@ def make_features(raw_data):
     # handle missing data
     raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).ffill())
     # raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).bfill())
-    raw_data = raw_data.fillna(raw_data.mean())
+    raw_data = raw_data.fillna(raw_data.median())
 
     last_meas = raw_data.groupby('pid', sort=False).last()
     median = raw_data.groupby('pid', sort=False).median()
@@ -59,8 +59,8 @@ prediction_sub_task1 = np.zeros((X_test.to_numpy().shape[0],
                                  len(labels_sub_task1)))
 
 parameters_clf = {
-    'histgradientboostingclassifier__max_bins': [100, 250],
-    'histgradientboostingclassifier__max_depth': [3, 7],
+    'histgradientboostingclassifier__max_bins': [100, 175, 250],
+    'histgradientboostingclassifier__max_depth': [3, 5, 7],
     'histgradientboostingclassifier__min_samples_leaf': [10, 100, 250]
 }
 
@@ -68,7 +68,7 @@ pipeline = make_pipeline(RobustScaler(),
                          HistGradientBoostingClassifier(random_state=rnd_seed,
                                                         early_stopping=False))
 
-clf = GridSearchCV(pipeline, parameters_clf, n_jobs=-1, cv=5,
+clf = GridSearchCV(pipeline, parameters_clf, n_jobs=-1, cv=3,
                    scoring='roc_auc', verbose=2, refit=True)
 
 for i in range(len(labels_sub_task1)):
