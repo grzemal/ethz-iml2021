@@ -4,6 +4,7 @@ import time
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import make_pipeline
+from scipy.stats import linregress
 
 # load the training data
 train_features = pd.read_csv('train_features.csv'). \
@@ -14,25 +15,33 @@ train_labels = pd.read_csv('train_labels.csv'). \
 # load the test data
 test_features = pd.read_csv('test_features.csv')
 
-
 def make_features(raw_data):
     n_meas = raw_data.groupby('pid', sort=False).count()
 
     # handle missing data
     raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).ffill())
-    # raw_data = raw_data.fillna(raw_data.groupby(['pid'], sort=False).bfill())
     raw_data = raw_data.fillna(raw_data.median())
 
     last_meas = raw_data.groupby('pid', sort=False).last()
     median = raw_data.groupby('pid', sort=False).median()
-    interquartile_range = raw_data.groupby('pid', sort=False). \
+    maximum = raw_data.groupby('pid', sort=False).max()
+    minimum = raw_data.groupby('pid', sort=False).min()
+    std = raw_data.groupby('pid', sort=False).std()
+    var = raw_data.groupby('pid', sort=False).var()
+    sem = raw_data.groupby('pid', sort=False).sem()
+    interquartile_range = raw_data.groupby('pid', sort=False).\
         quantile([.25, .75]).groupby('pid', sort=False). \
         diff().groupby('pid', sort=False).first(1)
 
-    frames = [n_meas.iloc[:, 1:], last_meas.iloc[:, 1:],
-              median.iloc[:, 1:], interquartile_range.iloc[:, 1:]
-              ]
+    frames = [
+        n_meas.iloc[:, 1:], last_meas.iloc[:, 1:],
+        median.iloc[:, 1:], sem.iloc[:, 1:],
+        minimum.iloc[:, 1:], maximum.iloc[:, 1:],
+        std.iloc[:, 1:], var.iloc[:, 1:],
+        interquartile_range.iloc[:, 1:]
+    ]
     features = pd.concat(frames, axis=1, join="inner")
+
     return features
 
 
@@ -109,8 +118,8 @@ prediction_sub_task3 = np.zeros((X_test.to_numpy().shape[0],
                                  len(labels_sub_task3)))
 
 parameters_reg = {
-    'histgradientboostingregressor__max_bins': [100, 250],
-    'histgradientboostingregressor__max_depth': [3, 7],
+    'histgradientboostingregressor__max_bins': [100, 175, 250],
+    'histgradientboostingregressor__max_depth': [3, 5, 7],
     'histgradientboostingregressor__min_samples_leaf': [10, 100, 250]
 }
 
@@ -118,16 +127,16 @@ pipeline = make_pipeline(StandardScaler(),
                          HistGradientBoostingRegressor(random_state=rnd_seed,
                                                        early_stopping=False))
 
-reg = GridSearchCV(pipeline, parameters_reg, n_jobs=-1, cv=5,
+reg = GridSearchCV(pipeline, parameters_reg, n_jobs=-1, cv=3,
                    scoring='r2', verbose=2, refit=True)
 
 for i in range(len(labels_sub_task3)):
     start = time.time()
     reg.fit(X_train.to_numpy(), y_train[[labels_sub_task3[i]]].to_numpy().flatten())
     prediction_sub_task3[:, i] = reg.predict(X_test.to_numpy())
+    end = time.time()
     print("Score for ", labels_sub_task3[i], ": ", reg.best_score_)
     print("Best parameters: ", reg.best_params_)
-    end = time.time()
     print("Time to compute: ", end - start)
 
 ##########################################################################
