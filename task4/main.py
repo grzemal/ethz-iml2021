@@ -7,8 +7,8 @@ from tensorflow.keras import applications
 import keras.backend as K
 
 ### IMAGE PARAMETERS ###
-min_width = 64
-min_height = 64
+min_width = 128      #soll_wert: 354
+min_height = 128     #soll_wert: 242
 
 
 def preprocess_image(filename):
@@ -60,11 +60,12 @@ x = tf.data.Dataset.from_tensor_slices((anchor_images + anchor_images, positive_
 labels = tf.data.Dataset.from_tensor_slices(labels)
 
 dataset = tf.data.Dataset.zip((x, labels))
-dataset = dataset.shuffle(buffer_size=len(dataset), reshuffle_each_iteration=True)
+dataset = dataset.shuffle(buffer_size=len(dataset), reshuffle_each_iteration=False)
 dataset = dataset.map(preprocess_data)
 
-split = 0.3
+split = 0.6
 train_dataset = dataset.take(int(split * len(dataset)))
+train_dataset = train_dataset.shuffle(buffer_size=len(dataset), reshuffle_each_iteration=False)
 number_of_samples = len(train_dataset)
 val_dataset = dataset.skip(int(split * len(dataset)))
 
