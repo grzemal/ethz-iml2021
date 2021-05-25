@@ -1,9 +1,27 @@
 import tensorflow as tf
 import numpy as np
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
-img_width = 224
-img_height = 224
+img_width = 242
+img_height = 242
+
+def visualize(triplet):
+    """Visualize a few triplets from the supplied batches."""
+    anchor, positive, negative = triplet
+    def show(ax, image):
+        ax.imshow(image)
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+
+    fig = plt.figure(figsize=(9, 9))
+
+    axs = fig.subplots(3, 3)
+    for i in range(3):
+        show(axs[i, 0], anchor)
+        show(axs[i, 1], positive)
+        show(axs[i, 2], negative)
+    plt.show()
 
 
 def preprocess_image_train(filename):
@@ -71,7 +89,7 @@ def compute_distances(embeddings):
 
 def make_train_val():
     triplets = np.loadtxt('train_triplets.txt', dtype=str)
-    train_samples, val_samples = train_test_split(triplets, test_size=0.2)
+    train_samples, val_samples = train_test_split(triplets, test_size=0.2, random_state=42)
     np.savetxt('val_samples.txt', val_samples, fmt='%s %s %s')
     np.savetxt('train_samples.txt', train_samples, fmt='%s %s %s')
     return len(train_samples)
@@ -108,6 +126,12 @@ num_train_samples = make_train_val()
 
 train_dataset = create_dataset('train_samples.txt')
 val_dataset = create_dataset('val_samples.txt')
+
+print(train_dataset)
+for triplet, labels in train_dataset.take(1):
+    visualize(triplet)
+
+# visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
 train_dataset = train_dataset.shuffle(buffer_size=1024, reshuffle_each_iteration=True)
 val_dataset = val_dataset.shuffle(buffer_size=1024, reshuffle_each_iteration=True)
