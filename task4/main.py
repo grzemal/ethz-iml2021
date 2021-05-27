@@ -1,164 +1,130 @@
-import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers
-from tensorflow.keras import Model
-from tensorflow.keras import optimizers
-from tensorflow.keras import applications
-import keras.backend as K
+import numpy as np
+from sklearn.model_selection import train_test_split
 
-### IMAGE PARAMETERS ###
-min_width = 128      #soll_wert: 354
-min_height = 128     #soll_wert: 242
+img_width = 224
+img_height = 224
+tf.random.set_seed(42)
+val_size = 0.2
 
 
-def preprocess_image(filename):
-    """
-    Load the specified file as a JPEG image, preprocess it and
-    resize it to the target shape.
-    """
+def preprocess_image_train(filename):
     image_string = tf.io.read_file(filename)
     image = tf.image.decode_jpeg(image_string, channels=3)
-    image = tf.image.convert_image_dtype(image, tf.float32)
-    image = tf.image.resize(image, (min_width, min_height))
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_up_down(image)
+    #image = tf.image.random_jpeg_quality(image, 75, 95)
+    image = tf.image.resize(image, (img_width, img_height))
     return image
 
 
-def preprocess_data(x, labels):
-    anchor, pos_neg, neg_pos = x
-    return tf.stack([preprocess_image(anchor),
-                     preprocess_image(pos_neg),
-                     preprocess_image(neg_pos)], axis=0), labels
+def preprocess_image_test(filename):
+    image_string = tf.io.read_file(filename)
+    image = tf.image.decode_jpeg(image_string, channels=3)
+    image = tf.image.resize(image, (img_width, img_height))
+    return image
 
 
-def preprocess_data_test(x_test):
-    anchor, pos_neg, neg_pos = x_test
-    return tf.stack([preprocess_image(anchor),
-                     preprocess_image(pos_neg),
-                     preprocess_image(neg_pos)], axis=0)
+def preprocess_data_train(x):
+    anchor, positive, negative = x
+    return tf.stack([preprocess_image_train(anchor),
+                     preprocess_image_train(positive),
+                     preprocess_image_train(negative)], axis=0), 1
 
 
-# from zipfile import ZipFile
-# zip_ref = ZipFile('food.zip', 'r')
-# extracting all the files
-# print('Extracting all the files now...')
-# zip_ref.extractall()
-# zip_ref.close()
-# print('Done!')
+def preprocess_data_test(x):
+    anchor, positive, negative = x
+    return tf.stack([preprocess_image_test(anchor),
+                     preprocess_image_test(positive),
+                     preprocess_image_test(negative)], axis=0)
 
-train_data = np.loadtxt('train_triplets.txt', dtype=str)
-anchor_images = ['food/' + image[0] + '.jpg' for image in train_data]
-positive_images = ['food/' + image[1] + '.jpg' for image in train_data]
-negative_images = ['food/' + image[2] + '.jpg' for image in train_data]
 
-data_length = len(anchor_images)
-labels1 = [1.0] * data_length
-labels2 = [0.0] * data_length
-labels = labels1 + labels2
+def create_model():
+    inputs = tf.keras.Input(shape=(3, img_height, img_width, 3))
+    encoder = tf.keras.applications.MobileNetV3Large(include_top=False, input_shape=(img_height, img_width, 3))
+    encoder.trainable = False
+    decoder = tf.keras.Sequential([tf.keras.layers.GlobalAveragePooling2D(),
+                                   tf.keras.layers.Dense(128),
+                                   #tf.keras.layers.Dropout(0.5),
+                                   tf.keras.layers.Lambda(lambda t: tf.math.l2_normalize(t, axis=1))
+                                   ])
+    anchor, positive, negative = inputs[:, 0, ...], inputs[:, 1, ...], inputs[:, 2, ...]
+    anchor = decoder(encoder(tf.keras.applications.mobilenet_v3.preprocess_input(anchor)))
+    positive = decoder(encoder(tf.keras.applications.mobilenet_v3.preprocess_input(positive)))
+    negative = decoder(encoder(tf.keras.applications.mobilenet_v3.preprocess_input(negative)))
+    embedding = tf.stack([anchor, positive, negative], axis=-1)
+    siamese_network = tf.keras.Model(inputs=inputs, outputs=embedding)
+    siamese_network.summary()
+    return siamese_network
 
-x = tf.data.Dataset.from_tensor_slices((anchor_images + anchor_images, positive_images + negative_images,
-                                        negative_images + positive_images))
-labels = tf.data.Dataset.from_tensor_slices(labels)
 
-dataset = tf.data.Dataset.zip((x, labels))
-dataset = dataset.shuffle(buffer_size=len(dataset), reshuffle_each_iteration=False)
-dataset = dataset.map(preprocess_data)
+def create_inference_model(model):
+    distance_positive, distance_negative = compute_distances(model.output)
+    predictions = tf.cast(tf.greater_equal(distance_negative, distance_positive), tf.int8)
+    return tf.keras.Model(inputs=model.inputs, outputs=predictions)
 
-split = 0.6
-train_dataset = dataset.take(int(split * len(dataset)))
-train_dataset = train_dataset.shuffle(buffer_size=len(dataset), reshuffle_each_iteration=False)
-number_of_samples = len(train_dataset)
-val_dataset = dataset.skip(int(split * len(dataset)))
 
-epochs = 5
-batch_size = 32
-train_dataset = train_dataset.batch(batch_size)
-val_dataset = val_dataset.batch(batch_size)
+def compute_distances(embeddings):
+    anchor, positive, negative = embeddings[..., 0], embeddings[..., 1], embeddings[..., 2]
+    distance_positive = tf.reduce_sum(tf.square(anchor - positive), 1)
+    distance_negative = tf.reduce_sum(tf.square(anchor - negative), 1)
+    return distance_positive, distance_negative
 
-# import matplotlib.pyplot as plt
-# for images, labels in train_dataset.take(1):# only take first element of dataset
-#     numpy_images = images.numpy()
-#     numpy_labels = labels.numpy()
-#     # print(numpy_labels)
-#
-# fig = plt.figure()
-# ax = fig.add_subplot(3, 3, 1)
-# imgplot = plt.imshow(numpy_images[0, 0, ...])
-# ax.set_title(numpy_labels[0])
-# ax = fig.add_subplot(3, 3, 2)
-# imgplot = plt.imshow(numpy_images[0, 1, ...])
-# ax.set_title('Image A')
-# ax = fig.add_subplot(3, 3, 3)
-# imgplot = plt.imshow(numpy_images[0, 2, ...])
-# ax.set_title('Image B')
-#
-# ax = fig.add_subplot(3, 3, 4)
-# imgplot = plt.imshow(numpy_images[1, 0, ...])
-# ax.set_title(numpy_labels[1])
-# ax = fig.add_subplot(3, 3, 5)
-# imgplot = plt.imshow(numpy_images[1, 1, ...])
-# ax.set_title('Image A')
-# ax = fig.add_subplot(3, 3, 6)
-# imgplot = plt.imshow(numpy_images[1, 2, ...])
-# ax.set_title('Image B')
-#
-# ax = fig.add_subplot(3, 3, 7)
-# imgplot = plt.imshow(numpy_images[2, 0, ...])
-# ax.set_title(numpy_labels[2])
-# ax = fig.add_subplot(3, 3, 8)
-# imgplot = plt.imshow(numpy_images[2, 1, ...])
-# ax.set_title('Image A')
-# ax = fig.add_subplot(3, 3, 9)
-# imgplot = plt.imshow(numpy_images[2, 2, ...])
-# ax.set_title('Image B')
-# plt.show()
 
-## MODEL
-base_model = applications.mobilenet_v2.MobileNetV2(input_shape=(min_width, min_height, 3),
-                                                   include_top=False, weights='imagenet')
-for layer in base_model.layers:
-    layer.trainable = False
+def make_train_val():
+    triplets = np.loadtxt('train_triplets.txt', dtype=str)
+    train_samples, val_samples = train_test_split(triplets, test_size=val_size, random_state=42)
+    np.savetxt('val_samples.txt', val_samples, fmt='%s %s %s')
+    np.savetxt('train_samples.txt', train_samples, fmt='%s %s %s')
+    return len(train_samples)
 
-layer = layers.GlobalAveragePooling2D()(base_model.output)
-embedding_network = Model(base_model.input, layer)
 
-input = layers.Input((3, min_width, min_height, 3))
-input_1, input_2, input_3 = input[:, 0, ...], input[:, 1, ...], input[:, 2, ...]
+def create_dataset(dataset_filename, training=True):
+    data = np.loadtxt(dataset_filename, dtype=str)
+    anchor_images = ['food/' + image[0] + '.jpg' for image in data]
+    positive_images = ['food/' + image[1] + '.jpg' for image in data]
+    negative_images = ['food/' + image[2] + '.jpg' for image in data]
+    x = tf.data.Dataset.from_tensor_slices((anchor_images, positive_images, negative_images))
+    dataset = tf.data.Dataset.zip((x,))
+    if training:
+        dataset = dataset.map(preprocess_data_train)
+    else:
+        dataset = dataset.map(preprocess_data_test)
+    return dataset
 
-tower_1 = embedding_network(input_1)
-tower_2 = embedding_network(input_2)
-tower_3 = embedding_network(input_3)
 
-merge_layer = layers.Concatenate()([tower_1, tower_2, tower_3])
-x = layers.Dense(32, activation='relu')(merge_layer)
-x = layers.BatchNormalization()(x)
-x = layers.Dropout(0.3)(x)
-x = layers.Dense(16, activation='relu')(x)
-x = layers.BatchNormalization()(x)
-output_layer = layers.Dense(1, activation="sigmoid")(x)
-siamese = Model(inputs=input, outputs=output_layer)
+def triplet_loss(_, embeddings):
+    distance_positive, distance_negative = compute_distances(embeddings)
+    return tf.reduce_mean(tf.math.softplus(distance_positive - distance_negative))
 
-siamese.compile(loss='binary_crossentropy', optimizer='adam', metrics='accuracy')
-siamese.summary()
-# es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=2)
-siamese.fit(train_dataset, epochs=epochs, validation_data=val_dataset, validation_steps=10)
 
-#######################################################
-##################### PREDICTION  #####################
-#######################################################
-test_batch_size = 64
-test_data = np.loadtxt('test_triplets.txt', dtype=str)
-anchor_images_test = ['food/' + image[0] + '.jpg' for image in test_data]
-first_image_test = ['food/' + image[1] + '.jpg' for image in test_data]
-second_image_test = ['food/' + image[2] + '.jpg' for image in test_data]
+def accuracy(_, embeddings):
+    distance_positive, distance_negative = compute_distances(embeddings)
+    return tf.reduce_mean(tf.cast(tf.greater_equal(distance_negative, distance_positive), tf.float32))
 
-x_test = tf.data.Dataset.from_tensor_slices((anchor_images_test, first_image_test, second_image_test))
-dataset_test = tf.data.Dataset.zip((x_test,))
-dataset_test = dataset_test.map(preprocess_data_test)
 
-dataset_test = dataset_test.batch(test_batch_size)
+epochs = 1
+train_batch_size = 64
+inference_batch_size = 256
+num_train_samples = make_train_val()
 
-predictions = siamese.predict(dataset_test, verbose=1)
-predictions = np.round(predictions)
+train_dataset = create_dataset('train_samples.txt')
+val_dataset = create_dataset('val_samples.txt')
+
+train_dataset = train_dataset.shuffle(buffer_size=1024, reshuffle_each_iteration=True)
+val_dataset = val_dataset.shuffle(buffer_size=1024, reshuffle_each_iteration=True)
+
+train_dataset = train_dataset.batch(train_batch_size)
+val_dataset = val_dataset.batch(train_batch_size)
+
+model = create_model()
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss=triplet_loss, metrics=[accuracy])
+es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1)
+model.fit(train_dataset, epochs=epochs, validation_data=val_dataset, validation_steps=10)
+
+test_dataset = create_dataset('test_triplets.txt', training=False)
+test_dataset = test_dataset.batch(inference_batch_size).prefetch(2)
+
+inference_model = create_inference_model(model)
+predictions = inference_model.predict(test_dataset, verbose=1)
 np.savetxt('predictions.txt', predictions, fmt='%i')
-
-
